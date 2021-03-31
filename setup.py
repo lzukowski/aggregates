@@ -7,5 +7,5 @@ setup(
     tests_require=['pytest'],
     package_dir={'': 'src'},
     packages=['project_management'],
-    py_modules=['app'],
+    py_modules=['app', 'aggregate_root'],
 )

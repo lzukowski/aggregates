@@ -5,6 +5,7 @@ from typing import ContextManager, Type, Union
 
 from pytest import fixture, raises
 
+import aggregate_root
 from app import Application
 from project_management import InvalidTransition, IssueID
 from project_management.commands import (
@@ -29,7 +30,9 @@ from project_management.events import (
 
 
 def pytest_generate_tests(metafunc):
-    handlers = []
+    handlers = [
+        aggregate_root.CommandHandler,
+    ]
     names = [h.__module__ for h in handlers]
     metafunc.parametrize('handler_cls', handlers, ids=names)
 
