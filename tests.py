@@ -2,22 +2,26 @@ from contextlib import contextmanager
 from functools import partialmethod
 from inspect import isclass
 from typing import Any, Callable, ContextManager, Protocol, Type, Union
-from unittest import TestCase
+from unittest import TestCase, expectedFailure
 
 import aggregate_root
-from project_management import InvalidTransition, IssueID
+import exposed_queries
+from project_management import (
+    Command,
+    Event,
+    Handler,
+    InvalidTransition,
+    IssueID,
+)
 from project_management.commands import (
     CloseIssue,
-    Command,
     CreateIssue,
-    Handler,
     ReopenIssue,
     ResolveIssue,
     StartIssueProgress,
     StopIssueProgress,
 )
 from project_management.events import (
-    Event,
     IssueClosed,
     IssueOpened,
     IssueProgressStarted,
@@ -220,4 +224,12 @@ class AggregateRootTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
         self.handler = aggregate_root.CommandHandler(self.event_store)
+        self.issue_id = IssueID.new()
+
+
+@expectedFailure
+class ExposedQueriesTest(TestCase, ExperimentsTestBase):
+    def setUp(self) -> None:
+        self.event_store = EventStore()
+        self.handler = exposed_queries.CommandHandler(self.event_store)
         self.issue_id = IssueID.new()
