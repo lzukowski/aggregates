@@ -1,13 +1,17 @@
 from contextlib import contextmanager
-from datetime import datetime
-from enum import Enum
 from functools import singledispatchmethod
 from typing import ContextManager, Text
 
-from project_management import Handler, InvalidTransition, IssueID
+from project_management import (
+    Command,
+    Event,
+    Handler,
+    InvalidTransition,
+    IssueID,
+    State,
+)
 from project_management.commands import (
     CloseIssue,
-    Command,
     CreateIssue,
     ReopenIssue,
     ResolveIssue,
@@ -15,7 +19,6 @@ from project_management.commands import (
     StopIssueProgress,
 )
 from project_management.events import (
-    Event,
     IssueClosed,
     IssueOpened,
     IssueProgressStarted,
@@ -27,13 +30,6 @@ from project_management.eventsourcing import Aggregate, EventStore, Repository
 
 
 class Issue(Aggregate):
-    class State(Enum):
-        OPEN = 'OPEN'
-        CLOSED = 'CLOSED'
-        IN_PROGRESS = 'IN_PROGRESS'
-        REOPENED = 'REOPENED'
-        RESOLVED = 'RESOLVED'
-
     state: State = None
 
     def create(self) -> None:
@@ -67,48 +63,46 @@ class Issue(Aggregate):
         self.trigger_event(IssueResolved)
 
     def can_create(self) -> bool:
-        return self.state != Issue.State.OPEN
+        return self.state != State.OPEN
 
     def can_start(self) -> bool:
-        valid_states = [Issue.State.OPEN, Issue.State.REOPENED]
+        valid_states = [State.OPEN, State.REOPENED]
         return self.state in valid_states
 
     def can_close(self) -> bool:
         valid_states = [
-            Issue.State.OPEN,
-            Issue.State.IN_PROGRESS,
-            Issue.State.REOPENED,
-            Issue.State.RESOLVED,
+            State.OPEN,
+            State.IN_PROGRESS,
+            State.REOPENED,
+            State.RESOLVED,
         ]
         return self.state in valid_states
 
     def can_reopen(self) -> bool:
-        valid_states = [Issue.State.CLOSED, Issue.State.RESOLVED]
+        valid_states = [State.CLOSED, State.RESOLVED]
         return self.state in valid_states
 
     def can_stop(self) -> bool:
-        return self.state == Issue.State.IN_PROGRESS
+        return self.state == State.IN_PROGRESS
 
     def can_resolve(self) -> bool:
-        valid_states = [
-            Issue.State.OPEN, Issue.State.REOPENED, Issue.State.IN_PROGRESS,
-        ]
+        valid_states = [State.OPEN, State.REOPENED, State.IN_PROGRESS]
         return self.state in valid_states
 
     def apply(self, event: Event) -> None:
         event_type = type(event)
         if event_type == IssueOpened:
-            self.state = Issue.State.OPEN
+            self.state = State.OPEN
         elif event_type == IssueProgressStarted:
-            self.state = Issue.State.IN_PROGRESS
+            self.state = State.IN_PROGRESS
         elif event_type == IssueProgressStopped:
-            self.state = Issue.State.OPEN
+            self.state = State.OPEN
         elif event_type == IssueReopened:
-            self.state = Issue.State.REOPENED
+            self.state = State.REOPENED
         elif event_type == IssueResolved:
-            self.state = Issue.State.RESOLVED
+            self.state = State.RESOLVED
         elif event_type == IssueClosed:
-            self.state = Issue.State.CLOSED
+            self.state = State.CLOSED
         super().apply(event)
 
     def __repr__(self) -> Text:
