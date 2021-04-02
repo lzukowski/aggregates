@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Union
 
-from eventsourcing.infrastructure.base import AbstractEventStore
-
+from .eventsourcing import EventStore
 from .issue import IssueID
 
 
@@ -49,7 +48,7 @@ Command = Union[
 
 
 class Handler:
-    def __init__(self, event_store: AbstractEventStore) -> None:
+    def __init__(self, event_store: EventStore) -> None:
         self._event_store = event_store
 
     def __call__(self, cmd: Command) -> None:

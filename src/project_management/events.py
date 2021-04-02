@@ -1,8 +1,4 @@
-from eventsourcing.domain.model.aggregate import AggregateRoot
-
-
-class Event(AggregateRoot.Event):
-    pass
+from .eventsourcing import Event
 
 
 class IssueOpened(Event):
