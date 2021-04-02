@@ -1,6 +1,5 @@
-from . import commands, events
+from . import commands, events, eventsourcing
 from .commands import Handler
-from .db import IssueRecord
 from .issue import IssueID, InvalidTransition
 
 
@@ -8,7 +7,7 @@ __all__ = [
     'Handler',
     'InvalidTransition',
     'IssueID',
-    'IssueRecord',
     'commands',
     'events',
+    'eventsourcing',
 ]

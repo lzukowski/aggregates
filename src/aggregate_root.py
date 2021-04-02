@@ -2,15 +2,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
 from functools import singledispatchmethod
-from typing import ContextManager, Optional, Text
-
-from eventsourcing.domain.model.aggregate import AggregateRoot
-from eventsourcing.domain.model.entity import TVersionedEvent
-from eventsourcing.domain.model.events import DomainEvent, subscribe
-from eventsourcing.infrastructure.base import AbstractEventStore
-from eventsourcing.infrastructure.eventsourcedrepository import (
-    EventSourcedRepository,
-)
+from typing import ContextManager, Text
 
 from project_management import Handler, InvalidTransition, IssueID
 from project_management.commands import (
@@ -31,9 +23,10 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
+from project_management.eventsourcing import Aggregate, EventStore, Repository
 
 
-class Issue(AggregateRoot):
+class Issue(Aggregate):
     class State(Enum):
         OPEN = 'OPEN'
         CLOSED = 'CLOSED'
@@ -46,32 +39,32 @@ class Issue(AggregateRoot):
     def create(self) -> None:
         if not self.can_create():
             raise InvalidTransition('create', self.id)
-        self.__trigger_event__(IssueOpened)
+        self.trigger_event(IssueOpened)
 
     def start(self) -> None:
         if not self.can_start():
             raise InvalidTransition('start', self.id)
-        self.__trigger_event__(IssueProgressStarted)
+        self.trigger_event(IssueProgressStarted)
 
     def stop(self) -> None:
         if not self.can_stop():
             raise InvalidTransition('stop', self.id)
-        self.__trigger_event__(IssueProgressStopped)
+        self.trigger_event(IssueProgressStopped)
 
     def close(self) -> None:
         if not self.can_close():
             raise InvalidTransition('close', self.id)
-        self.__trigger_event__(IssueClosed)
+        self.trigger_event(IssueClosed)
 
     def reopen(self) -> None:
         if not self.can_reopen():
             raise InvalidTransition('reopen', self.id)
-        self.__trigger_event__(IssueReopened)
+        self.trigger_event(IssueReopened)
 
     def resolve(self) -> None:
         if not self.can_resolve():
             raise InvalidTransition('resolve', self.id)
-        self.__trigger_event__(IssueResolved)
+        self.trigger_event(IssueResolved)
 
     def can_create(self) -> bool:
         return self.state != Issue.State.OPEN
@@ -102,7 +95,7 @@ class Issue(AggregateRoot):
         ]
         return self.state in valid_states
 
-    def __mutate__(self, event: TVersionedEvent) -> None:
+    def apply(self, event: Event) -> None:
         event_type = type(event)
         if event_type == IssueOpened:
             self.state = Issue.State.OPEN
@@ -116,28 +109,22 @@ class Issue(AggregateRoot):
             self.state = Issue.State.RESOLVED
         elif event_type == IssueClosed:
             self.state = Issue.State.CLOSED
-        else:
-            super().__mutate__(event)
-        self.___version__ = event.originator_version
+        super().apply(event)
 
     def __repr__(self) -> Text:
         return (
             f'<{self.__class__.__name__} '
             f'id={self.id!s} '
-            f'version={self.__version__} '
+            f'version={self.version} '
             f'state={self.state and self.state.name}'
             f'>'
         )
 
 
 class CommandHandler(Handler):
-    def __init__(self, event_store: AbstractEventStore) -> None:
+    def __init__(self, event_store: EventStore) -> None:
         super().__init__(event_store)
-        self._repository = EventSourcedRepository[Issue, DomainEvent](
-            event_store=event_store,
-            mutator_func=self._mutate,
-        )
-        subscribe(event_store.store_events)
+        self._repository = Repository[Issue](event_store=event_store)
 
     @singledispatchmethod
     def __call__(self, cmd: Command) -> None:
@@ -173,21 +160,9 @@ class CommandHandler(Handler):
         with self._aggregate(cmd.id) as issue:
             issue.resolve()
 
-    def _mutate(self, issue: Optional[Issue], event: Event) -> Issue:
-        if issue is None:
-            issue = Issue(
-                id=event.originator_id,
-                __created_on__=event.timestamp,
-                __version__=0,
-            )
-        issue.__mutate__(event)
-        return issue
-
     @contextmanager
     def _aggregate(self, issue_id: IssueID) -> ContextManager[Issue]:
-        issue = (
-            self._repository.get_entity(issue_id)
-            or Issue(id=issue_id, __created_on__=datetime.now(), __version__=0)
-        )
+        issue = Issue(issue_id)
+        self._repository.get(issue)
         yield issue
-        issue.__save__()
+        self._repository.save(issue)

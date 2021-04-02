@@ -6,7 +6,6 @@ from typing import ContextManager, Type, Union
 from pytest import fixture, raises
 
 import aggregate_root
-from app import Application
 from project_management import InvalidTransition, IssueID
 from project_management.commands import (
     CloseIssue,
@@ -27,6 +26,7 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
+from project_management.eventsourcing import EventStore
 
 
 def pytest_generate_tests(metafunc):
@@ -40,8 +40,7 @@ def pytest_generate_tests(metafunc):
 class TestScenarios:
     @fixture(autouse=True)
     def setup(self, handler_cls: Type[Handler]) -> None:
-        application = Application(uri='sqlite:///:memory:')
-        self.event_store = application.event_store
+        self.event_store = EventStore()
         self.issue_id = IssueID.new()
         self.handler = handler_cls(self.event_store)
 
@@ -215,11 +214,11 @@ class TestScenarios:
 
     @contextmanager
     def assert_events(self, *expected_events: Type[Event]) -> None:
-        scope = self.event_store.list_events(originator_id=self.issue_id)
-        before = scope[-1].originator_version if scope else None
+        scope = self.event_store.get(originator_id=self.issue_id)
+        old_version = scope[-1].originator_version if scope else None
         yield
-        actual_events = self.event_store.list_events(
-            originator_id=self.issue_id, gt=before,
+        actual_events = self.event_store.get(
+            originator_id=self.issue_id, after_version=old_version,
         )
         assert expected_events == tuple(type(e) for e in actual_events)
 
