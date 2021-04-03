@@ -3,8 +3,15 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import (
-    Any, ContextManager, Dict, Generic, Iterator, List, Optional,
-    Type, TypeVar,
+    Any,
+    ContextManager,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Type,
+    TypeVar,
 )
 from uuid import UUID
 
