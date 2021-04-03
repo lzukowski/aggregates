@@ -89,7 +89,9 @@ class Repository(Generic[TAggregate]):
     def __init__(self, event_store: EventStore[TEvent]) -> None:
         self.event_store = event_store
 
-    def apply(self, aggregate: TAggregate, version: Optional[int] = None) -> None:
+    def apply(
+            self, aggregate: TAggregate, version: Optional[int] = None,
+    ) -> None:
         for event in self.event_store.get(aggregate.id, to_version=version):
             aggregate.apply(event)
 
