@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from functools import partialmethod
 from inspect import isclass
 from typing import Any, Callable, ContextManager, Protocol, Type, Union
-from unittest import TestCase, expectedFailure
+from unittest import TestCase
 
 import aggregate_root
 import exposed_queries
@@ -227,7 +227,6 @@ class AggregateRootTest(TestCase, ExperimentsTestBase):
         self.issue_id = IssueID.new()
 
 
-@expectedFailure
 class ExposedQueriesTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
