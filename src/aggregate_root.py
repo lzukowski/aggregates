@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from functools import singledispatchmethod
 from typing import ContextManager, Text
 
