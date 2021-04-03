@@ -1,11 +1,15 @@
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
+from typing import (
+    Any, ContextManager, Dict, Generic, Iterator, List, Optional,
+    Type, TypeVar,
+)
 from uuid import UUID
 
 
-@dataclass
+@dataclass(frozen=True)
 class Event:
     originator_id: UUID
     originator_version: int
@@ -30,13 +34,13 @@ class Aggregate:
         return self._version
 
     @property
-    def pending_events(self) -> List[Event]:
-        return self._pending_events
+    def pending_events(self) -> Iterator[Event]:
+        return iter(self._pending_events)
 
     def apply(self, event: TEvent) -> None:
         self._version = event.originator_version
 
-    def trigger_event(self, event_class: Type[TEvent], **kwargs: Any) -> None:
+    def _trigger_event(self, event_class: Type[TEvent], **kwargs: Any) -> None:
         new_event = event_class(
             originator_id=self.id,
             originator_version=self.version + 1,
@@ -55,7 +59,7 @@ class EventStore(Generic[TEvent]):
     def __init__(self) -> None:
         self._in_memory: Dict[UUID, List[TEvent]] = defaultdict(list)
 
-    def put(self, events: List[TEvent]) -> None:
+    def put(self, *events: TEvent) -> None:
         for event in events:
             self._in_memory[event.originator_id].append(event)
 
@@ -66,7 +70,7 @@ class EventStore(Generic[TEvent]):
             to_version: Optional[int] = None,
             desc: bool = False,
             limit: Optional[int] = None,
-    ) -> List[TEvent]:
+    ) -> Iterator[TEvent]:
         def event_is_valid(event: TEvent) -> bool:
             version = event.originator_version
             if after_version and not (version > after_version):
@@ -85,12 +89,15 @@ class Repository(Generic[TAggregate]):
     def __init__(self, event_store: EventStore[TEvent]) -> None:
         self.event_store = event_store
 
-    def get(self, aggregate: TAggregate, version: Optional[int] = None) -> None:
-        events = self.event_store.get(
-            originator_id=aggregate.id, to_version=version,
-        )
-        for event in events:
+    def apply(self, aggregate: TAggregate, version: Optional[int] = None) -> None:
+        for event in self.event_store.get(aggregate.id, to_version=version):
             aggregate.apply(event)
 
     def save(self, aggregate: TAggregate) -> None:
-        self.event_store.put(aggregate.pending_events)
+        self.event_store.put(*aggregate.pending_events)
+
+    @contextmanager
+    def aggregate(self, aggregate: TAggregate) -> ContextManager[TAggregate]:
+        self.apply(aggregate)
+        yield aggregate
+        self.save(aggregate)

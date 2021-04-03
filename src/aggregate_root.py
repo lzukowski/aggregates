@@ -35,32 +35,32 @@ class Issue(Aggregate):
     def create(self) -> None:
         if not self.can_create():
             raise InvalidTransition('create', self.id)
-        self.trigger_event(IssueOpened)
+        self._trigger_event(IssueOpened)
 
     def start(self) -> None:
         if not self.can_start():
             raise InvalidTransition('start', self.id)
-        self.trigger_event(IssueProgressStarted)
+        self._trigger_event(IssueProgressStarted)
 
     def stop(self) -> None:
         if not self.can_stop():
             raise InvalidTransition('stop', self.id)
-        self.trigger_event(IssueProgressStopped)
+        self._trigger_event(IssueProgressStopped)
 
     def close(self) -> None:
         if not self.can_close():
             raise InvalidTransition('close', self.id)
-        self.trigger_event(IssueClosed)
+        self._trigger_event(IssueClosed)
 
     def reopen(self) -> None:
         if not self.can_reopen():
             raise InvalidTransition('reopen', self.id)
-        self.trigger_event(IssueReopened)
+        self._trigger_event(IssueReopened)
 
     def resolve(self) -> None:
         if not self.can_resolve():
             raise InvalidTransition('resolve', self.id)
-        self.trigger_event(IssueResolved)
+        self._trigger_event(IssueResolved)
 
     def can_create(self) -> bool:
         return self.state != State.OPEN
@@ -126,37 +126,33 @@ class CommandHandler(Handler):
 
     @__call__.register
     def _(self, cmd: CreateIssue) -> None:
-        with self._aggregate(cmd.id) as issue:
+        with self.aggregate(cmd.id) as issue:
             issue.create()
 
     @__call__.register
     def _(self, cmd: CloseIssue) -> None:
-        with self._aggregate(cmd.id) as issue:
+        with self.aggregate(cmd.id) as issue:
             issue.close()
 
     @__call__.register
     def _(self, cmd: StartIssueProgress) -> None:
-        with self._aggregate(cmd.id) as issue:
+        with self.aggregate(cmd.id) as issue:
             issue.start()
 
     @__call__.register
     def _(self, cmd: StopIssueProgress) -> None:
-        with self._aggregate(cmd.id) as issue:
+        with self.aggregate(cmd.id) as issue:
             issue.stop()
 
     @__call__.register
     def _(self, cmd: ReopenIssue) -> None:
-        with self._aggregate(cmd.id) as issue:
+        with self.aggregate(cmd.id) as issue:
             issue.reopen()
 
     @__call__.register
     def _(self, cmd: ResolveIssue) -> None:
-        with self._aggregate(cmd.id) as issue:
+        with self.aggregate(cmd.id) as issue:
             issue.resolve()
 
-    @contextmanager
-    def _aggregate(self, issue_id: IssueID) -> ContextManager[Issue]:
-        issue = Issue(issue_id)
-        self._repository.get(issue)
-        yield issue
-        self._repository.save(issue)
+    def aggregate(self, issue_id: IssueID) -> ContextManager[Issue]:
+        return self._repository.aggregate(Issue(issue_id))

@@ -7,32 +7,32 @@ from .eventsourcing import EventStore
 from .issue import IssueID
 
 
-@dataclass
+@dataclass(frozen=True)
 class CreateIssue:
     id: IssueID
 
 
-@dataclass
+@dataclass(frozen=True)
 class ResolveIssue:
     id: IssueID
 
 
-@dataclass
+@dataclass(frozen=True)
 class CloseIssue:
     id: IssueID
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReopenIssue:
     id: IssueID
 
 
-@dataclass
+@dataclass(frozen=True)
 class StartIssueProgress:
     id: IssueID
 
 
-@dataclass
+@dataclass(frozen=True)
 class StopIssueProgress:
     id: IssueID
 
