@@ -1,9 +1,8 @@
 from contextlib import contextmanager
 from functools import partialmethod
 from inspect import isclass
-from typing import ContextManager, Type, Union
-
-from pytest import fixture, raises
+from typing import Any, Callable, ContextManager, Protocol, Type, Union
+from unittest import TestCase
 
 import aggregate_root
 from project_management import InvalidTransition, IssueID
@@ -29,20 +28,12 @@ from project_management.events import (
 from project_management.eventsourcing import EventStore
 
 
-def pytest_generate_tests(metafunc):
-    handlers = [
-        aggregate_root.CommandHandler,
-    ]
-    names = [h.__module__ for h in handlers]
-    metafunc.parametrize('handler_cls', handlers, ids=names)
-
-
-class TestScenarios:
-    @fixture(autouse=True)
-    def setup(self, handler_cls: Type[Handler]) -> None:
-        self.event_store = EventStore()
-        self.issue_id = IssueID.new()
-        self.handler = handler_cls(self.event_store)
+class ExperimentsTestBase(Protocol):
+    event_store: EventStore
+    handler: Handler
+    issue_id: IssueID
+    assertRaises: Callable[[Type[Exception]], ContextManager] = NotImplemented
+    assertEqual: Callable[[Any, Any], None] = NotImplemented
 
     def test_create(self):
         with self.assert_opened():
@@ -199,10 +190,8 @@ class TestScenarios:
         with self.assert_resolved():
             self.act(ResolveIssue)
 
-    @contextmanager
     def assert_invalid_transition(self) -> ContextManager:
-        with raises(InvalidTransition):
-            yield
+        return self.assertRaises(InvalidTransition)
 
     def act(self, command: Union[Type[Command], Command]) -> None:
         command = command(self.issue_id) if isclass(command) else command
@@ -220,7 +209,7 @@ class TestScenarios:
         actual_events = self.event_store.get(
             originator_id=self.issue_id, after_version=old_version,
         )
-        assert expected_events == tuple(type(e) for e in actual_events)
+        self.assertEqual(expected_events, tuple(type(e) for e in actual_events))
 
     assert_opened = partialmethod(assert_events, IssueOpened)
     assert_started = partialmethod(assert_events, IssueProgressStarted)
@@ -228,3 +217,10 @@ class TestScenarios:
     assert_closed = partialmethod(assert_events, IssueClosed)
     assert_stopped = partialmethod(assert_events, IssueProgressStopped)
     assert_reopened = partialmethod(assert_events, IssueReopened)
+
+
+class AggregateRootTest(TestCase, ExperimentsTestBase):
+    def setUp(self) -> None:
+        self.event_store = EventStore()
+        self.handler = aggregate_root.CommandHandler(self.event_store)
+        self.issue_id = IssueID.new()
