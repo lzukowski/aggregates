@@ -87,9 +87,16 @@ class EventStore(Generic[TEvent]):
             return True
 
         valid_events = filter(event_is_valid, self._in_memory[originator_id])
-        return sorted(
-            valid_events, reverse=desc, key=lambda e: e.originator_version,
-        )[:limit]
+        return iter(
+            sorted(
+                valid_events, reverse=desc, key=lambda e: e.originator_version,
+            )[:limit]
+        )
+
+    def actual_version(self, originator_id: UUID) -> Optional[int]:
+        if originator_id not in self._in_memory:
+            return None
+        return max(e.originator_version for e in self._in_memory[originator_id])
 
 
 class Repository(Generic[TAggregate]):

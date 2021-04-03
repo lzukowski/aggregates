@@ -203,13 +203,10 @@ class ExperimentsTestBase(Protocol):
 
     @contextmanager
     def assert_events(self, *expected_events: Type[Event]) -> None:
-        scope = self.event_store.get(originator_id=self.issue_id)
-        old_version = scope[-1].originator_version if scope else None
+        old_version = self.event_store.actual_version(self.issue_id)
         yield
-        actual_events = self.event_store.get(
-            originator_id=self.issue_id, after_version=old_version,
-        )
-        self.assertEqual(expected_events, tuple(type(e) for e in actual_events))
+        emitted = self.event_store.get(self.issue_id, after_version=old_version)
+        self.assertEqual(expected_events, tuple(type(e) for e in emitted))
 
     assert_opened = partialmethod(assert_events, IssueOpened)
     assert_started = partialmethod(assert_events, IssueProgressStarted)
