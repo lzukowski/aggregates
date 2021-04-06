@@ -1,5 +1,5 @@
 from functools import singledispatchmethod
-from typing import ContextManager, Text
+from typing import ContextManager, Optional, Text
 
 from project_management import (
     Command,
@@ -29,7 +29,7 @@ from project_management.eventsourcing import Aggregate, EventStore, Repository
 
 
 class Issue(Aggregate):
-    state: State = None
+    state: Optional[State] = None
 
     def create(self) -> None:
         if not self.can_create():
@@ -117,39 +117,39 @@ class Issue(Aggregate):
 class CommandHandler(Handler):
     def __init__(self, event_store: EventStore) -> None:
         super().__init__(event_store)
-        self._repository = Repository[Issue](event_store=event_store)
+        self._repository = Repository[Issue, Event](event_store=event_store)
 
     @singledispatchmethod
     def __call__(self, cmd: Command) -> None:
         ...
 
     @__call__.register
-    def _(self, cmd: CreateIssue) -> None:
+    def create(self, cmd: CreateIssue) -> None:
         with self.aggregate(cmd.id) as issue:
             issue.create()
 
     @__call__.register
-    def _(self, cmd: CloseIssue) -> None:
+    def close(self, cmd: CloseIssue) -> None:
         with self.aggregate(cmd.id) as issue:
             issue.close()
 
     @__call__.register
-    def _(self, cmd: StartIssueProgress) -> None:
+    def start(self, cmd: StartIssueProgress) -> None:
         with self.aggregate(cmd.id) as issue:
             issue.start()
 
     @__call__.register
-    def _(self, cmd: StopIssueProgress) -> None:
+    def stop(self, cmd: StopIssueProgress) -> None:
         with self.aggregate(cmd.id) as issue:
             issue.stop()
 
     @__call__.register
-    def _(self, cmd: ReopenIssue) -> None:
+    def reopen(self, cmd: ReopenIssue) -> None:
         with self.aggregate(cmd.id) as issue:
             issue.reopen()
 
     @__call__.register
-    def _(self, cmd: ResolveIssue) -> None:
+    def resolve(self, cmd: ResolveIssue) -> None:
         with self.aggregate(cmd.id) as issue:
             issue.resolve()
 

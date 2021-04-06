@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import (
     Any,
-    ContextManager,
     Dict,
     Generic,
     Iterator,
@@ -26,11 +25,11 @@ class Event:
 TEvent = TypeVar("TEvent", bound=Event)
 
 
-class Aggregate:
+class Aggregate(Generic[TEvent]):
     def __init__(self, originator_id: UUID) -> None:
         self._id = originator_id
         self._version = 0
-        self._pending_events: List[Event] = []
+        self._pending_events: List[TEvent] = []
 
     @property
     def id(self) -> UUID:
@@ -41,14 +40,14 @@ class Aggregate:
         return self._version
 
     @property
-    def pending_events(self) -> Iterator[Event]:
+    def pending_events(self) -> Iterator[TEvent]:
         return iter(self._pending_events)
 
     def apply(self, event: TEvent) -> None:
         self._version = event.originator_version
 
     def _trigger_event(self, event_class: Type[TEvent], **kwargs: Any) -> None:
-        new_event = event_class(
+        new_event = event_class(  # type: ignore
             originator_id=self.id,
             originator_version=self.version + 1,
             timestamp=datetime.now(tz=timezone.utc),
@@ -99,7 +98,7 @@ class EventStore(Generic[TEvent]):
         return max(e.originator_version for e in self._in_memory[originator_id])
 
 
-class Repository(Generic[TAggregate]):
+class Repository(Generic[TAggregate, TEvent]):
     def __init__(self, event_store: EventStore[TEvent]) -> None:
         self.event_store = event_store
 
@@ -113,7 +112,7 @@ class Repository(Generic[TAggregate]):
         self.event_store.put(*aggregate.pending_events)
 
     @contextmanager
-    def aggregate(self, aggregate: TAggregate) -> ContextManager[TAggregate]:
+    def aggregate(self, aggregate: TAggregate) -> Iterator[TAggregate]:
         self.apply(aggregate)
         yield aggregate
         self.save(aggregate)
