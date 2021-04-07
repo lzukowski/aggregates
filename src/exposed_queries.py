@@ -117,9 +117,6 @@ class IssueProjection:
 
 
 class CommandHandler(Handler):
-    def __init__(self, event_store: EventStore) -> None:
-        super().__init__(event_store)
-
     def __call__(self, cmd: Command) -> None:
         projection = IssueProjection(self._event_store)
         issue = projection(Issue(cmd.id))
