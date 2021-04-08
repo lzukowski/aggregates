@@ -1,7 +1,8 @@
+import inspect
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import singledispatchmethod
-from typing import Optional, Text, Type
+from typing import Callable, Optional, Text, Type
 
 from project_management import (
     Command,
@@ -120,47 +121,49 @@ class CommandHandler(Handler):
     def __call__(self, cmd: Command) -> None:
         projection = IssueProjection(self._event_store)
         issue = projection(Issue(cmd.id))
-        self.process(cmd, issue)
+        event = self.process(cmd, issue)
+        self._trigger_event(issue, event)
 
     @singledispatchmethod
-    def process(self, cmd: Command, issue: Issue) -> None:
+    def process(self, cmd: Command, issue: Issue) -> Type[Event]:
         ...
 
     @process.register
-    def create(self, _: CreateIssue, issue: Issue) -> None:
-        if not issue.can_create():
-            raise InvalidTransition('create', issue.id)
-        self._trigger_event(issue, IssueOpened)
+    def create(self, _: CreateIssue, issue: Issue) -> Type[Event]:
+        self.raise_invalid_transition(unless=issue.can_create)
+        return IssueOpened
 
     @process.register
-    def start(self, _: StartIssueProgress, issue: Issue) -> None:
-        if not issue.can_start():
-            raise InvalidTransition('start', issue.id)
-        self._trigger_event(issue, IssueProgressStarted)
+    def start(self, _: StartIssueProgress, issue: Issue) -> Type[Event]:
+        self.raise_invalid_transition(unless=issue.can_start)
+        return IssueProgressStarted
 
     @process.register
-    def stop(self, _: StopIssueProgress, issue: Issue) -> None:
-        if not issue.can_stop():
-            raise InvalidTransition('stop', issue.id)
-        self._trigger_event(issue, IssueProgressStopped)
+    def stop(self, _: StopIssueProgress, issue: Issue) -> Type[Event]:
+        self.raise_invalid_transition(unless=issue.can_stop)
+        return IssueProgressStopped
 
     @process.register
-    def close(self, _: CloseIssue, issue: Issue) -> None:
-        if not issue.can_close():
-            raise InvalidTransition('close', issue.id)
-        self._trigger_event(issue, IssueClosed)
+    def close(self, _: CloseIssue, issue: Issue) -> Type[Event]:
+        self.raise_invalid_transition(unless=issue.can_close)
+        return IssueClosed
 
     @process.register
-    def reopen(self, _: ReopenIssue, issue: Issue) -> None:
-        if not issue.can_reopen():
-            raise InvalidTransition('reopen', issue.id)
-        self._trigger_event(issue, IssueReopened)
+    def reopen(self, _: ReopenIssue, issue: Issue) -> Type[Event]:
+        self.raise_invalid_transition(unless=issue.can_reopen)
+        return IssueReopened
 
     @process.register
-    def resolve(self, _: ResolveIssue, issue: Issue) -> None:
-        if not issue.can_resolve():
-            raise InvalidTransition('resolve', issue.id)
-        self._trigger_event(issue, IssueResolved)
+    def resolve(self, _: ResolveIssue, issue: Issue) -> Type[Event]:
+        self.raise_invalid_transition(unless=issue.can_resolve)
+        return IssueResolved
+
+    def raise_invalid_transition(self, unless: Callable[[], bool]) -> None:
+        assert inspect.ismethod(unless)
+        issue: Issue = inspect.getcallargs(unless)['self']
+        if unless():
+            return
+        raise InvalidTransition(issue.id)
 
     def _trigger_event(self, issue: Issue, event_class: Type[TEvent]) -> None:
         event = event_class(
