@@ -6,6 +6,7 @@ from unittest import TestCase
 
 import aggregate_root
 import exposed_queries
+import extracted_state
 from project_management import (
     Command,
     Event,
@@ -231,4 +232,11 @@ class ExposedQueriesTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
         self.handler = exposed_queries.CommandHandler(self.event_store)
+        self.issue_id = IssueID.new()
+
+
+class ExposedStateTest(TestCase, ExperimentsTestBase):
+    def setUp(self) -> None:
+        self.event_store = EventStore()
+        self.handler = extracted_state.CommandHandler(self.event_store)
         self.issue_id = IssueID.new()
