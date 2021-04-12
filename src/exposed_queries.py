@@ -53,13 +53,16 @@ class Issue:
     def resolve(self) -> None:
         self._state = State.RESOLVED
 
+    @property
     def can_create(self) -> bool:
         return self._state != State.OPEN
 
+    @property
     def can_start(self) -> bool:
         valid_states = [State.OPEN, State.REOPENED]
         return self._state in valid_states
 
+    @property
     def can_close(self) -> bool:
         valid_states = [
             State.OPEN,
@@ -69,13 +72,16 @@ class Issue:
         ]
         return self._state in valid_states
 
+    @property
     def can_reopen(self) -> bool:
         valid_states = [State.CLOSED, State.RESOLVED]
         return self._state in valid_states
 
+    @property
     def can_stop(self) -> bool:
         return self._state == State.IN_PROGRESS
 
+    @property
     def can_resolve(self) -> bool:
         valid_states = [State.OPEN, State.REOPENED, State.IN_PROGRESS]
         return self._state in valid_states
@@ -120,47 +126,48 @@ class CommandHandler(Handler):
     def __call__(self, cmd: Command) -> None:
         projection = IssueProjection(self._event_store)
         issue = projection(Issue(cmd.id))
-        self.process(cmd, issue)
+        event = self.process(cmd, issue)
+        self._trigger_event(issue, event)
 
     @singledispatchmethod
-    def process(self, cmd: Command, issue: Issue) -> None:
+    def process(self, cmd: Command, issue: Issue) -> Type[Event]:
         ...
 
     @process.register
-    def create(self, _: CreateIssue, issue: Issue) -> None:
-        if not issue.can_create():
+    def create(self, _: CreateIssue, issue: Issue) -> Type[Event]:
+        if not issue.can_create:
             raise InvalidTransition('create', issue.id)
-        self._trigger_event(issue, IssueOpened)
+        return IssueOpened
 
     @process.register
-    def start(self, _: StartIssueProgress, issue: Issue) -> None:
-        if not issue.can_start():
+    def start(self, _: StartIssueProgress, issue: Issue) -> Type[Event]:
+        if not issue.can_start:
             raise InvalidTransition('start', issue.id)
-        self._trigger_event(issue, IssueProgressStarted)
+        return IssueProgressStarted
 
     @process.register
-    def stop(self, _: StopIssueProgress, issue: Issue) -> None:
-        if not issue.can_stop():
+    def stop(self, _: StopIssueProgress, issue: Issue) -> Type[Event]:
+        if not issue.can_stop:
             raise InvalidTransition('stop', issue.id)
-        self._trigger_event(issue, IssueProgressStopped)
+        return IssueProgressStopped
 
     @process.register
-    def close(self, _: CloseIssue, issue: Issue) -> None:
-        if not issue.can_close():
+    def close(self, _: CloseIssue, issue: Issue) -> Type[Event]:
+        if not issue.can_close:
             raise InvalidTransition('close', issue.id)
-        self._trigger_event(issue, IssueClosed)
+        return IssueClosed
 
     @process.register
-    def reopen(self, _: ReopenIssue, issue: Issue) -> None:
-        if not issue.can_reopen():
+    def reopen(self, _: ReopenIssue, issue: Issue) -> Type[Event]:
+        if not issue.can_reopen:
             raise InvalidTransition('reopen', issue.id)
-        self._trigger_event(issue, IssueReopened)
+        return IssueReopened
 
     @process.register
-    def resolve(self, _: ResolveIssue, issue: Issue) -> None:
-        if not issue.can_resolve():
+    def resolve(self, _: ResolveIssue, issue: Issue) -> Type[Event]:
+        if not issue.can_resolve:
             raise InvalidTransition('resolve', issue.id)
-        self._trigger_event(issue, IssueResolved)
+        return IssueResolved
 
     def _trigger_event(self, issue: Issue, event_class: Type[TEvent]) -> None:
         event = event_class(
