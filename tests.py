@@ -2,11 +2,12 @@ from contextlib import contextmanager
 from functools import partialmethod
 from inspect import isclass
 from typing import Any, Callable, ContextManager, Protocol, Type, Union
-from unittest import TestCase
+from unittest import TestCase, expectedFailure
 
 import aggregate_root
 import exposed_queries
 import extracted_state
+import functional
 from project_management import (
     Command,
     Event,
@@ -239,4 +240,12 @@ class ExposedStateTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
         self.handler = extracted_state.CommandHandler(self.event_store)
+        self.issue_id = IssueID.new()
+
+
+@expectedFailure
+class FunctionalAggregateTest(TestCase, ExperimentsTestBase):
+    def setUp(self) -> None:
+        self.event_store = EventStore()
+        self.handler = functional.CommandHandler(self.event_store)
         self.issue_id = IssueID.new()
