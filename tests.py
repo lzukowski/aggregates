@@ -243,7 +243,6 @@ class ExposedStateTest(TestCase, ExperimentsTestBase):
         self.issue_id = IssueID.new()
 
 
-@expectedFailure
 class FunctionalAggregateTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
