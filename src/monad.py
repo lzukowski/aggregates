@@ -1,9 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from functools import partial, singledispatch
-from typing import List, Type
+from functools import partial, wraps
+from typing import (
+    Callable,
+    Iterator, List,
+    NamedTuple,
+    Optional,
+    Set,
+    Type,
+    Union,
+)
 
 from project_management import (
     Command,
@@ -11,6 +19,7 @@ from project_management import (
     Handler,
     InvalidTransition,
     IssueID,
+    State,
 )
 from project_management.commands import (
     CloseIssue,
@@ -31,42 +40,37 @@ from project_management.events import (
 from project_management.eventsourcing import TEvent
 
 
-@dataclass
-class Issue:
+class Issue(NamedTuple):
     id: IssueID
-    version: int = 0
-    changes: List[Event] = field(default_factory=list)
+    state: Optional[State]
+    version: int
+    pending: List[Event]
 
 
-class Invalid(Issue): pass
-class Init(Issue): pass
-class Open(Issue): pass
-class Closed(Issue): pass
-class InProgress(Issue): pass
-class Reopened(Issue): pass
-class Resolved(Issue): pass
+class Failure:
+    def __eq__(self, other: Failure) -> bool:
+        return isinstance(other, Failure)
+
+
+IssueMonad = Union[Failure, Issue]
 
 
 def apply(event: Event, issue: Issue) -> Issue:
+    state = None
     event_type = type(event)
-    issue_type = Init
     if event_type == IssueOpened:
-        issue_type = Open
+        state = State.OPEN
     elif event_type == IssueProgressStarted:
-        issue_type = InProgress
+        state = State.IN_PROGRESS
     elif event_type == IssueProgressStopped:
-        issue_type = Open
+        state = State.OPEN
     elif event_type == IssueReopened:
-        issue_type = Reopened
+        state = State.REOPENED
     elif event_type == IssueResolved:
-        issue_type = Resolved
+        state = State.RESOLVED
     elif event_type == IssueClosed:
-        issue_type = Closed
-    return issue_type(
-        id=issue.id,
-        changes=issue.changes,
-        version=event.originator_version,
-    )
+        state = State.CLOSED
+    return Issue(issue.id, state, event.originator_version, issue.pending)
 
 
 def trigger_event(event_class: Type[TEvent], issue: Issue) -> Issue:
@@ -75,71 +79,87 @@ def trigger_event(event_class: Type[TEvent], issue: Issue) -> Issue:
         originator_version=issue.version + 1,
         timestamp=datetime.now(tz=timezone.utc),
     )
-    issue.changes += [event]
+    issue.pending.append(event)
     return apply(event, issue)
 
 
-def invalid_transition(issue: Issue) -> Issue:
-    return Invalid(issue.id, version=-1)
+trigger_opened = partial(trigger_event, IssueOpened)
+trigger_started = partial(trigger_event, IssueProgressStarted)
+trigger_stopped = partial(trigger_event, IssueProgressStopped)
+trigger_closed = partial(trigger_event, IssueClosed)
+trigger_reopened = partial(trigger_event, IssueReopened)
+trigger_resolved = partial(trigger_event, IssueResolved)
 
 
-create = singledispatch(invalid_transition)
-create.register(Init)(partial(trigger_event, IssueOpened))
-
-start = singledispatch(invalid_transition)
-process_start = partial(trigger_event, IssueProgressStarted)
-start.register(Open, process_start)
-start.register(Reopened, process_start)
-
-stop = singledispatch(invalid_transition)
-stop.register(InProgress, partial(trigger_event, IssueProgressStopped))
-
-close = singledispatch(invalid_transition)
-process_close = partial(trigger_event, IssueClosed)
-close.register(Open, process_close)
-close.register(InProgress, process_close)
-close.register(Reopened, process_close)
-close.register(Resolved, process_close)
-
-reopen = singledispatch(invalid_transition)
-process_reopen = partial(trigger_event, IssueReopened)
-reopen.register(Closed, process_reopen)
-reopen.register(Resolved, process_reopen)
-
-resolve = singledispatch(invalid_transition)
-process_resolve = partial(trigger_event, IssueResolved)
-resolve.register(Open, process_resolve)
-resolve.register(Reopened, process_resolve)
-resolve.register(InProgress, process_resolve)
+MonadFunction = Callable[[IssueMonad], IssueMonad]
 
 
-def process(issue: Issue, cmd: Command) -> Issue:
-    command_type = type(cmd)
-    if command_type == CreateIssue:
-        issue = create(issue)
-    elif command_type == ResolveIssue:
-        issue = resolve(issue)
-    elif command_type == CloseIssue:
-        issue = close(issue)
-    elif command_type == ReopenIssue:
-        issue = reopen(issue)
-    elif command_type == StartIssueProgress:
-        issue = start(issue)
-    elif command_type == StopIssueProgress:
-        issue = stop(issue)
-    return issue
+def bind(func: MonadFunction) -> MonadFunction:
+    valid: Set[State] = set()
+
+    @wraps(func)
+    def operation(monad: IssueMonad) -> IssueMonad:
+        is_failure = monad == Failure() or monad.state not in valid
+        return Failure() if is_failure else func(monad)
+
+    def to_state(state: State) -> MonadFunction:
+        valid.add(state)
+        return operation
+    operation.to_state = to_state
+
+    return operation
+
+
+create = bind(trigger_opened).to_state(None)
+start = bind(trigger_started).to_state(State.OPEN).to_state(State.REOPENED)
+stop = bind(trigger_stopped).to_state(State.IN_PROGRESS)
+close = (
+    bind(trigger_closed)
+    .to_state(State.OPEN)
+    .to_state(State.IN_PROGRESS)
+    .to_state(State.REOPENED)
+    .to_state(State.RESOLVED)
+)
+reopen = bind(trigger_reopened).to_state(State.CLOSED).to_state(State.RESOLVED)
+resolve = (
+    bind(trigger_resolved)
+    .to_state(State.OPEN)
+    .to_state(State.REOPENED)
+    .to_state(State.IN_PROGRESS)
+)
 
 
 class CommandHandler(Handler):
     def __call__(self, cmd: Command) -> None:
-        issue = self.get_issue(cmd.id)
-        issue = process(issue, cmd)
-        if isinstance(issue, Invalid):
-            raise InvalidTransition(cmd)
-        self._event_store.put(*issue.changes)
+        with self.aggregate(cmd.id) as issue:
+            command_type = type(cmd)
+            if command_type == CreateIssue:
+                issue = create(issue)
+            elif command_type == ResolveIssue:
+                issue = resolve(issue)
+            elif command_type == CloseIssue:
+                issue = close(issue)
+            elif command_type == ReopenIssue:
+                issue = reopen(issue)
+            elif command_type == StartIssueProgress:
+                issue = start(issue)
+            elif command_type == StopIssueProgress:
+                issue = stop(issue)
+
+            if issue == Failure():
+                raise InvalidTransition(cmd)
 
     def get_issue(self, issue_id: IssueID) -> Issue:
-        issue = Init(issue_id)
+        issue = Issue(issue_id, None, 0, [])
         for event in self._event_store.get(issue_id):
             issue = apply(event, issue)
         return issue
+
+    @contextmanager
+    def aggregate(self, issue_id: IssueID) -> Iterator[Issue]:
+        pending = []
+        issue = Issue(issue_id, None, 0, pending)
+        for event in self._event_store.get(issue_id):
+            issue = apply(event, issue)
+        yield issue
+        self._event_store.put(*pending)
