@@ -2,12 +2,13 @@ from contextlib import contextmanager
 from functools import partialmethod
 from inspect import isclass
 from typing import Any, Callable, ContextManager, Protocol, Type, Union
-from unittest import TestCase, expectedFailure
+from unittest import TestCase
 
 import aggregate_root
 import exposed_queries
 import extracted_state
 import functional
+import polymorphic
 from project_management import (
     Command,
     Event,
@@ -247,4 +248,10 @@ class FunctionalAggregateTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
         self.handler = functional.CommandHandler(self.event_store)
+        self.issue_id = IssueID.new()
+
+class PolymorphicTest(TestCase, ExperimentsTestBase):
+    def setUp(self) -> None:
+        self.event_store = EventStore()
+        self.handler = polymorphic.CommandHandler(self.event_store)
         self.issue_id = IssueID.new()
