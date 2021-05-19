@@ -10,6 +10,7 @@ import exposed_queries
 import extracted_state
 import functional
 import polymorphic
+import yield_based
 from project_management import (
     Command,
     Event,
@@ -263,4 +264,12 @@ class DuckTypingTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
         self.handler = duck_typing.CommandHandler(self.event_store)
+        self.issue_id = IssueID.new()
+
+
+@expectedFailure
+class YieldBasedTest(TestCase, ExperimentsTestBase):
+    def setUp(self) -> None:
+        self.event_store = EventStore()
+        self.handler = yield_based.CommandHandler(self.event_store)
         self.issue_id = IssueID.new()
