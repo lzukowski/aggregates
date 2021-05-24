@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from functools import partialmethod
 from inspect import isclass
 from typing import Any, Callable, ContextManager, Protocol, Type, Union
-from unittest import TestCase, expectedFailure
+from unittest import TestCase
 
 import aggregate_root
 import duck_typing
@@ -10,6 +10,7 @@ import exposed_queries
 import extracted_state
 import functional
 import polymorphic
+import repository
 from project_management import (
     Command,
     Event,
@@ -263,4 +264,11 @@ class DuckTypingTest(TestCase, ExperimentsTestBase):
     def setUp(self) -> None:
         self.event_store = EventStore()
         self.handler = duck_typing.CommandHandler(self.event_store)
+        self.issue_id = IssueID.new()
+
+
+class RepositoryBasedAggregateTest(TestCase, ExperimentsTestBase):
+    def setUp(self) -> None:
+        self.event_store = EventStore()
+        self.handler = repository.CommandHandler(self.event_store)
         self.issue_id = IssueID.new()
