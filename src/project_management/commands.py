@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Union
 
-from .eventsourcing import EventStore
+from event_sourcery import EventStore
+
 from .issue import IssueID
 
 

@@ -3,9 +3,10 @@ from functools import singledispatchmethod
 from typing import Optional, Text, Type
 from uuid import UUID
 
+from event_sourcery import Event
+
 from project_management import (
     Command,
-    Event,
     Handler,
     InvalidTransition,
     IssueID,
@@ -27,7 +28,6 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
-from project_management.eventsourcing import TEvent
 
 
 class IssueState:
@@ -72,7 +72,7 @@ class IssueState:
             self._status = State.RESOLVED
         elif event_type == IssueClosed:
             self._status = State.CLOSED
-        self.version = event.originator_version
+        self.version += 1
 
     def __repr__(self) -> Text:
         return (
@@ -195,16 +195,18 @@ class CommandHandler(Handler):
 
     def get_state(self, issue_id: IssueID) -> IssueState:
         state = IssueState(issue_id)
-        for event in self._event_store.get(issue_id):
+        for event in self._event_store.iter(issue_id):
             state.apply(event)
         return state
 
     def _trigger_event(
-            self, state: IssueState, event_class: Type[TEvent],
+            self, state: IssueState, event_class: Type[Event],
     ) -> None:
         event = event_class(
             originator_id=state.id,
             originator_version=state.version + 1,
             timestamp=datetime.now(tz=timezone.utc),
         )
-        self._event_store.put(event)
+        self._event_store.publish(
+            state.id, [event], expected_version=state.version + 1,
+        )

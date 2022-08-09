@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from functools import singledispatchmethod
 from typing import ContextManager, List, Optional, Tuple, Type
 
+from event_sourcery import Event, EventStore
+
 from project_management import (
     Command,
     Handler,
@@ -26,7 +28,6 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
-from project_management.eventsourcing import Event, EventStore, TEvent
 
 Events = List[Event]
 Version = int
@@ -126,11 +127,11 @@ class Issue:
             elif event_type == IssueClosed:
                 self.close()
 
-    def _register_event(self, event_class: Type[TEvent]) -> None:
+    def _register_event(self, event_class: Type[Event]) -> None:
         self.changes.append(
             event_class(
                 originator_id=self.id,
-                originator_version=self.version + 1,
+                version=self.version + 1,
                 timestamp=datetime.now(tz=timezone.utc),
             )
         )
@@ -141,11 +142,13 @@ class Repository:
         self._store = event_store
 
     def load(self, issue_id: IssueID) -> Tuple[Events, Version]:
-        events = list(self._store.get(issue_id))
+        events = list(self._store.iter(issue_id))
         return events, len(events)
 
-    def save(self, changes: Events) -> None:
-        self._store.put(*changes)
+    def save(self, issue_id: IssueID, changes: Events) -> None:
+        self._store.publish(
+            issue_id, changes, expected_version=changes[-1].version,
+        )
 
 
 class CommandHandler(Handler):
@@ -190,4 +193,4 @@ class CommandHandler(Handler):
         events, current_version = self._repository.load(issue_id)
         issue = Issue(issue_id, events, current_version)
         yield issue
-        self._repository.save(issue.changes)
+        self._repository.save(issue_id, issue.changes)

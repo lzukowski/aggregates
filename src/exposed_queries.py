@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from functools import singledispatchmethod
 from typing import Optional, Text, Type
 
+from event_sourcery import Event, EventStore
+
 from project_management import (
     Command,
     Handler,
@@ -26,7 +28,6 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
-from project_management.eventsourcing import Event, EventStore, TEvent
 
 
 @dataclass
@@ -101,9 +102,9 @@ class IssueProjection:
         self.event_store = event_store
 
     def __call__(self, issue: Issue) -> Issue:
-        for event in self.event_store.get(issue.id):
+        for version, event in enumerate(self.event_store.iter(issue.id), 1):
             self.apply(event, issue)
-            issue.version = event.originator_version
+            issue.version = version
         return issue
 
     def apply(self, event: Event, issue: Issue) -> None:
@@ -169,10 +170,12 @@ class CommandHandler(Handler):
             raise InvalidTransition('resolve', issue.id)
         return IssueResolved
 
-    def _trigger_event(self, issue: Issue, event_class: Type[TEvent]) -> None:
+    def _trigger_event(self, issue: Issue, event_class: Type[Event]) -> None:
         event = event_class(
             originator_id=issue.id,
             originator_version=issue.version + 1,
             timestamp=datetime.now(tz=timezone.utc),
         )
-        self._event_store.put(event)
+        self._event_store.publish(
+            issue.id, [event], expected_version=issue.version + 1,
+        )

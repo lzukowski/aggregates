@@ -1,12 +1,13 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import singledispatchmethod
-from typing import Iterator, List, Optional, Text, Type
+from typing import Iterator, List, Optional, Text, Type, Sequence
 from uuid import UUID
+
+from event_sourcery import Event
 
 from project_management import (
     Command,
-    Event,
     Handler,
     InvalidTransition,
     IssueID,
@@ -28,7 +29,6 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
-from project_management.eventsourcing import TEvent
 
 
 class IssueState:
@@ -74,7 +74,7 @@ class IssueState:
             self._status = State.RESOLVED
         elif event_type == IssueClosed:
             self._status = State.CLOSED
-        self.version = event.originator_version
+        self.version += 1
 
     def __repr__(self) -> Text:
         return (
@@ -91,8 +91,8 @@ class Issue:
         self._changes: List[Event] = []
 
     @property
-    def changes(self) -> Iterator[Event]:
-        return iter(self._changes)
+    def changes(self) -> Sequence[Event]:
+        return self._changes
 
     def create(self) -> None:
         if not self.can_create:
@@ -157,7 +157,7 @@ class Issue:
             or self._state.in_progress
         )
 
-    def _trigger_event(self, event_class: Type[TEvent]) -> None:
+    def _trigger_event(self, event_class: Type[Event]) -> None:
         new_event = event_class(
             originator_id=self._state.id,
             originator_version=self._state.version + 1,
@@ -214,8 +214,10 @@ class CommandHandler(Handler):
     @contextmanager
     def aggregate(self, issue_id: IssueID) -> Iterator[Issue]:
         state = IssueState(issue_id)
-        for event in self._event_store.get(issue_id):
+        for event in self._event_store.iter(issue_id):
             state.apply(event)
         issue = Issue(state)
         yield issue
-        self._event_store.put(*issue.changes)
+        self._event_store.publish(
+            issue_id, issue.changes, expected_version=state.version,
+        )
