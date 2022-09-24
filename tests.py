@@ -1,8 +1,11 @@
 from contextlib import contextmanager
-from functools import partialmethod
+from functools import partialmethod, lru_cache
 from inspect import isclass
 from typing import Any, Callable, ContextManager, Protocol, Type, Union
 from unittest import TestCase
+
+import sqlalchemy.orm
+from event_sourcery import get_event_store, Event, EventStore
 
 import aggregate_root
 import duck_typing
@@ -12,8 +15,8 @@ import functional
 import polymorphic
 import repository
 from project_management import (
+    db,
     Command,
-    Event,
     Handler,
     InvalidTransition,
     IssueID,
@@ -34,15 +37,26 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
-from project_management.eventsourcing import EventStore
 
 
 class ExperimentsTestBase(Protocol):
-    event_store: EventStore
-    handler: Handler
-    issue_id: IssueID
+    handler_cls: Type[Handler]
     assertRaises: Callable[[Type[Exception]], ContextManager] = NotImplemented
     assertEqual: Callable[[Any, Any], None] = NotImplemented
+
+    @property
+    @lru_cache
+    def event_store(self) -> EventStore:
+        return get_event_store(sqlalchemy.orm.Session(bind=db.engine))
+
+    @property
+    def handler(self) -> Handler:
+        return self.handler_cls(self.event_store)
+
+    @property
+    @lru_cache
+    def issue_id(self) -> IssueID:
+        return IssueID.new()
 
     def test_create(self):
         with self.assert_opened():
@@ -212,9 +226,10 @@ class ExperimentsTestBase(Protocol):
 
     @contextmanager
     def assert_events(self, *expected_events: Type[Event]) -> None:
-        old_version = self.event_store.actual_version(self.issue_id)
+        old_events = self.event_store.load_stream(self.issue_id)
         yield
-        emitted = self.event_store.get(self.issue_id, after_version=old_version)
+        start = old_events[-1].version + 1 if old_events else 0
+        emitted = self.event_store.load_stream(self.issue_id, start=start)
         self.assertEqual(expected_events, tuple(type(e) for e in emitted))
 
     assert_opened = partialmethod(assert_events, IssueOpened)
@@ -226,49 +241,28 @@ class ExperimentsTestBase(Protocol):
 
 
 class AggregateRootTest(TestCase, ExperimentsTestBase):
-    def setUp(self) -> None:
-        self.event_store = EventStore()
-        self.handler = aggregate_root.CommandHandler(self.event_store)
-        self.issue_id = IssueID.new()
+    handler_cls = aggregate_root.CommandHandler
 
 
 class ExposedQueriesTest(TestCase, ExperimentsTestBase):
-    def setUp(self) -> None:
-        self.event_store = EventStore()
-        self.handler = exposed_queries.CommandHandler(self.event_store)
-        self.issue_id = IssueID.new()
+    handler_cls = exposed_queries.CommandHandler
 
 
 class ExposedStateTest(TestCase, ExperimentsTestBase):
-    def setUp(self) -> None:
-        self.event_store = EventStore()
-        self.handler = extracted_state.CommandHandler(self.event_store)
-        self.issue_id = IssueID.new()
+    handler_cls = extracted_state.CommandHandler
 
 
 class FunctionalAggregateTest(TestCase, ExperimentsTestBase):
-    def setUp(self) -> None:
-        self.event_store = EventStore()
-        self.handler = functional.CommandHandler(self.event_store)
-        self.issue_id = IssueID.new()
+    handler_cls = functional.CommandHandler
 
 
 class PolymorphicTest(TestCase, ExperimentsTestBase):
-    def setUp(self) -> None:
-        self.event_store = EventStore()
-        self.handler = polymorphic.CommandHandler(self.event_store)
-        self.issue_id = IssueID.new()
+    handler_cls = polymorphic.CommandHandler
 
 
 class DuckTypingTest(TestCase, ExperimentsTestBase):
-    def setUp(self) -> None:
-        self.event_store = EventStore()
-        self.handler = duck_typing.CommandHandler(self.event_store)
-        self.issue_id = IssueID.new()
+    handler_cls = duck_typing.CommandHandler
 
 
 class RepositoryBasedAggregateTest(TestCase, ExperimentsTestBase):
-    def setUp(self) -> None:
-        self.event_store = EventStore()
-        self.handler = repository.CommandHandler(self.event_store)
-        self.issue_id = IssueID.new()
+    handler_cls = repository.CommandHandler

@@ -6,4 +6,8 @@ setup(
     package_dir={'': 'src'},
     packages=['project_management'],
     py_modules=['app', 'aggregate_root'],
+    requires=[
+        'python-event-sourcery>=0.1.7',
+        'sqlalchemy,'
+    ]
 )

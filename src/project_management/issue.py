@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from enum import Enum
-from uuid import UUID, uuid1
+from uuid import uuid1
+
+from event_sourcery.types.stream_id import StreamId
 
 
-class IssueID(UUID):
+class IssueID(StreamId):
     @classmethod
     def new(cls) -> IssueID:
         return IssueID(str(uuid1()))

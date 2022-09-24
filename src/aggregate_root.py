@@ -1,9 +1,11 @@
 from functools import singledispatchmethod
-from typing import ContextManager, Optional, Text
+from typing import Optional, Text
+
+from event_sourcery import Event, EventStore, Repository
+from event_sourcery.aggregate import Aggregate
 
 from project_management import (
     Command,
-    Event,
     Handler,
     InvalidTransition,
     IssueID,
@@ -25,7 +27,6 @@ from project_management.events import (
     IssueReopened,
     IssueResolved,
 )
-from project_management.eventsourcing import Aggregate, EventStore, Repository
 
 
 class Issue(Aggregate):
@@ -33,33 +34,33 @@ class Issue(Aggregate):
 
     def create(self) -> None:
         if not self.can_create():
-            raise InvalidTransition('create', self.id)
-        self._trigger_event(IssueOpened)
+            raise InvalidTransition('create')
+        self._event(IssueOpened)
 
     def start(self) -> None:
         if not self.can_start():
-            raise InvalidTransition('start', self.id)
-        self._trigger_event(IssueProgressStarted)
+            raise InvalidTransition('start')
+        self._event(IssueProgressStarted)
 
     def stop(self) -> None:
         if not self.can_stop():
-            raise InvalidTransition('stop', self.id)
-        self._trigger_event(IssueProgressStopped)
+            raise InvalidTransition('stop')
+        self._event(IssueProgressStopped)
 
     def close(self) -> None:
         if not self.can_close():
-            raise InvalidTransition('close', self.id)
-        self._trigger_event(IssueClosed)
+            raise InvalidTransition('close')
+        self._event(IssueClosed)
 
     def reopen(self) -> None:
         if not self.can_reopen():
-            raise InvalidTransition('reopen', self.id)
-        self._trigger_event(IssueReopened)
+            raise InvalidTransition('reopen')
+        self._event(IssueReopened)
 
     def resolve(self) -> None:
         if not self.can_resolve():
-            raise InvalidTransition('resolve', self.id)
-        self._trigger_event(IssueResolved)
+            raise InvalidTransition('resolve')
+        self._event(IssueResolved)
 
     def can_create(self) -> bool:
         return self.state != State.OPEN
@@ -88,7 +89,7 @@ class Issue(Aggregate):
         valid_states = [State.OPEN, State.REOPENED, State.IN_PROGRESS]
         return self.state in valid_states
 
-    def apply(self, event: Event) -> None:
+    def _apply(self, event: Event) -> None:
         event_type = type(event)
         if event_type == IssueOpened:
             self.state = State.OPEN
@@ -102,13 +103,11 @@ class Issue(Aggregate):
             self.state = State.RESOLVED
         elif event_type == IssueClosed:
             self.state = State.CLOSED
-        super().apply(event)
 
     def __repr__(self) -> Text:
         return (
             f'<{self.__class__.__name__} '
-            f'id={self.id!s} '
-            f'version={self.version} '
+            f'version={self.__version} '
             f'state={self.state and self.state.name}'
             f'>'
         )
@@ -117,7 +116,7 @@ class Issue(Aggregate):
 class CommandHandler(Handler):
     def __init__(self, event_store: EventStore) -> None:
         super().__init__(event_store)
-        self._repository = Repository[Issue, Event](event_store=event_store)
+        self._repository = Repository[Issue](event_store, Issue)
 
     @singledispatchmethod
     def __call__(self, cmd: Command) -> None:
@@ -125,33 +124,30 @@ class CommandHandler(Handler):
 
     @__call__.register
     def create(self, cmd: CreateIssue) -> None:
-        with self.aggregate(cmd.id) as issue:
+        with self._repository.aggregate(cmd.id) as issue:
             issue.create()
 
     @__call__.register
     def close(self, cmd: CloseIssue) -> None:
-        with self.aggregate(cmd.id) as issue:
+        with self._repository.aggregate(cmd.id) as issue:
             issue.close()
 
     @__call__.register
     def start(self, cmd: StartIssueProgress) -> None:
-        with self.aggregate(cmd.id) as issue:
+        with self._repository.aggregate(cmd.id) as issue:
             issue.start()
 
     @__call__.register
     def stop(self, cmd: StopIssueProgress) -> None:
-        with self.aggregate(cmd.id) as issue:
+        with self._repository.aggregate(cmd.id) as issue:
             issue.stop()
 
     @__call__.register
     def reopen(self, cmd: ReopenIssue) -> None:
-        with self.aggregate(cmd.id) as issue:
+        with self._repository.aggregate(cmd.id) as issue:
             issue.reopen()
 
     @__call__.register
     def resolve(self, cmd: ResolveIssue) -> None:
-        with self.aggregate(cmd.id) as issue:
+        with self._repository.aggregate(cmd.id) as issue:
             issue.resolve()
-
-    def aggregate(self, issue_id: IssueID) -> ContextManager[Issue]:
-        return self._repository.aggregate(Issue(issue_id))

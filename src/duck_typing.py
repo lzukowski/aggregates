@@ -5,9 +5,10 @@ from functools import singledispatchmethod
 from inspect import ismethod
 from typing import Text, Tuple, Type, Union
 
+from event_sourcery import Event
+
 from project_management import (
     Command,
-    Event,
     Handler,
     InvalidTransition,
     IssueID,
@@ -78,7 +79,7 @@ class CommandHandler(Handler):
             originator_version=version + 1,
             timestamp=datetime.now(tz=timezone.utc),
         )
-        self._event_store.put(event)
+        self._event_store.publish(cmd.id, [event], expected_version=version + 1)
 
     @singledispatchmethod
     def process(self, cmd: Command, issue) -> Type[Event]:
@@ -129,7 +130,7 @@ class CommandHandler(Handler):
     ) -> Tuple[Union[Issue, Open, InProgress, Resolved, Closed], int]:
         issue = Issue()
         version = 0
-        for event in self._event_store.get(issue_id):
+        for version, event in enumerate(self._event_store.iter(issue_id), 1):
             event_type = type(event)
             if event_type == IssueOpened:
                 issue = issue.open()
@@ -143,5 +144,4 @@ class CommandHandler(Handler):
                 issue = issue.resolve()
             elif event_type == IssueClosed:
                 issue = issue.close()
-            version = event.originator_version
         return issue, version

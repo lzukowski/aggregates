@@ -1,4 +1,4 @@
-from .eventsourcing import Event
+from event_sourcery import Event
 
 
 class IssueOpened(Event):
